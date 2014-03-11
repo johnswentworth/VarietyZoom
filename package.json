@@ -1,0 +1,25 @@
+{
+  "name": "VarietyZoom",
+  "version": "0.0.0",
+  "description": "A C++ implementation of a sorting algorithm which prioritizes both variety and high scores.",
+  "main": "scoring.js",
+  "scripts": {
+    "test": "node main.js",
+    "install": "node-gyp rebuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/johnswentworth/VarietyZoom.git"
+  },
+  "keywords": [
+    "recommendation",
+    "events",
+    "Hangtime"
+  ],
+  "author": "John Wentworth",
+  "license": "BSD-2-Clause",
+  "gypfile": true,
+  "bugs": {
+    "url": "https://github.com/johnswentworth/VarietyZoom/issues"
+  }
+}
