@@ -2,9 +2,9 @@
   "name": "VarietyZoom",
   "version": "0.0.0",
   "description": "A C++ implementation of a sorting algorithm which prioritizes both variety and high scores.",
-  "main": "scoring.js",
+  "main": "build/Release/cMath.node",
   "scripts": {
-    "test": "node main.js",
+    "test": "",
     "install": "node-gyp rebuild"
   },
   "repository": {
