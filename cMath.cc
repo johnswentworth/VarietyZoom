@@ -40,7 +40,7 @@ Handle<Value> loadVecs(const Arguments& args) {
 
 /*
 General outline:
-  Three functions are exposed to node. The first, above, is simply for loading 
+  Four functions are exposed to node. The first, above, is simply for loading 
   the word vectors and should be called before anything else.
   
   The second is wordMetric, which takes words for two events represented as
@@ -59,6 +59,9 @@ General outline:
   result list. All remaining events are then rescored so that events similar to
   the high-scoring event are moved down, thus promoting variety. This method is
   unavoidably O(n^2), which is why it's in C++.
+  
+  The fourth function is scoreInterest, which recores the first array of events
+  based on user interest in the second array of events.
 */
 
 vector<int> getIntArray(Local<Array> intArray) {
@@ -145,11 +148,31 @@ class SimpleEvent {
     return 0.5*zView*zView - 0.5*zRender*zRender + log(sigR) - log(sigV);
   }
   
+  static const double muVS = 0.39572821759080429;
+  static const double sigVS = 0.13549539232977462;//0.15290152697711662;
+  static const double muRS = 0.35188236872960243;
+  static const double sigRS = 0.13549539232977462;
+
+  static double weirdMetricToDscoreInterest(double metricValue) {
+    metricValue = 0.5*log((1.000000001 + metricValue)/(1.000000001 - metricValue));
+    
+    double zView = (metricValue - muVS)/sigVS;
+    double zRender = (metricValue - muRS)/sigRS;
+    return 0.5*zView*zView - 0.5*zRender*zRender + log(sigRS) - log(sigVS);
+  }
+  
   void rescore(SimpleEvent& other) {
     if (words.size() == 0 || other.words.size() == 0) // If there is no description, assume the worst.
       sortScore -= weirdMetricToDscore(1.0);
     else
       sortScore -= weirdMetricToDscore(metric(words, other.words));
+  }
+  
+  void incorporateInterest(SimpleEvent& other) {
+    if (words.size() == 0 || other.words.size() == 0) // If there is no description, assume the worst.
+      sortScore -= weirdMetricToDscoreInterest(0.0);
+    else
+      sortScore -= weirdMetricToDscoreInterest(metric(words, other.words));
   }
   
   void swap(SimpleEvent& other) {
@@ -227,6 +250,40 @@ Handle<Value> sortEvents(const Arguments& args) {
   return scope.Close(result);
 }
 
+// Make sure the first argument to this function is:
+// - An array
+// - of objects
+// - each of which has a sortScore and an ed
+// - the sortScore is a double (NOT NaN, null or undefined)
+// - ed is an array of ints (possibly empty but NOT null or undefined).
+// and the second argument is:
+// - An array
+// - of objects
+// - each of which has an ed
+// - ed is an array of ints (possibly empty but NOT null or undefined).
+Handle<Value> scoreInterest(const Arguments& args) {
+  HandleScope scope;
+  
+  Local<Array> jsEvents = Local<Array>::Cast(args[0]);
+  int numEvents = jsEvents->Length();
+  
+  Local<Array> jsInterestedEvents = Local<Array>::Cast(args[1]);
+  int numInterestedEvents = jsInterestedEvents->Length();
+  vector<SimpleEvent> interestedEvents = vector<SimpleEvent>();
+  interestedEvents.reserve(numEvents);
+  for (int i = 0; i < numInterestedEvents; ++i)
+    interestedEvents.push_back(SimpleEvent(jsInterestedEvents->CloneElementAt(i), i));
+  
+  for (int i = 0; i < numEvents; ++i) {
+    Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
+    SimpleEvent event = SimpleEvent(jsEvent, i);
+    for (int j = 0; j < numInterestedEvents; ++j)
+      event.incorporateInterest(interestedEvents[j]);
+    jsEvent->Set(String::New("sortScore"), Number::New(event.sortScore));
+  }
+  return scope.Close(String::New("These are not the events you are looking for."));
+}
+
 // node.js magic
 void init(Handle<Object> exports) {
   exports->Set(String::NewSymbol("loadVecs"),
@@ -235,6 +292,8 @@ void init(Handle<Object> exports) {
       FunctionTemplate::New(wordMetric)->GetFunction());
   exports->Set(String::NewSymbol("sortEvents"),
       FunctionTemplate::New(sortEvents)->GetFunction());
+  exports->Set(String::NewSymbol("scoreInterest"),
+      FunctionTemplate::New(scoreInterest)->GetFunction());
 }
 
 NODE_MODULE(cMath, init)
