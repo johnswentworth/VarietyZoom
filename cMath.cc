@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <thread>
 
 // I am expecting my CS prof Melissa to rappel in through the skylight and kill me for this...
 using namespace v8;
@@ -13,6 +14,9 @@ using namespace std;
 
 // ... and she'll make it REALLY slow and painful for this.
 vector<double*> wordVecs;
+
+// VERY rough sheets.
+int threadCount = 4;
 
 // This function is called once at startup to load the wordVectors into that charming global variable.
 Handle<Value> loadVecs(const Arguments& args) {
@@ -129,10 +133,10 @@ class SimpleEvent {
     srcIndex = index;
   }
   
-  static const double muV = 0.49475873081306054;
-  static const double sigV = 0.14822517233116092;
-  static const double muR = 0.5112155633954039;
-  static const double sigR = 0.14822517233116092;
+  static constexpr double muV = 0.49475873081306054;
+  static constexpr double sigV = 0.14822517233116092;
+  static constexpr double muR = 0.5112155633954039;
+  static constexpr double sigR = 0.14822517233116092;
   
   static double weirdMetricToDscore(double metricValue) {
     // Apply a Fisher transformation so that the metric is approximately normally distributed.
@@ -148,10 +152,10 @@ class SimpleEvent {
     return 0.5*zView*zView - 0.5*zRender*zRender + log(sigR) - log(sigV);
   }
   
-  static const double muVS = 0.39572821759080429;
-  static const double sigVS = 0.13549539232977462;//0.15290152697711662;
-  static const double muRS = 0.35188236872960243;
-  static const double sigRS = 0.13549539232977462;
+  static constexpr double muVS = 0.39572821759080429;
+  static constexpr double sigVS = 0.13549539232977462;//0.15290152697711662;
+  static constexpr double muRS = 0.35188236872960243;
+  static constexpr double sigRS = 0.13549539232977462;
 
   static double weirdMetricToDscoreInterest(double metricValue) {
     metricValue = 0.5*log((1.000000001 + metricValue)/(1.000000001 - metricValue));
@@ -250,6 +254,20 @@ Handle<Value> sortEvents(const Arguments& args) {
   return scope.Close(result);
 }
 
+void processEvents(vector<SimpleEvent> events, vector<SimpleEvent> interestedEvents, int startIndex, int endIndex) {
+  int numInterestedEvents = interestedEvents.size();
+  for (int i = startIndex; i < endIndex; ++i) {
+    SimpleEvent event = events[i];
+    for (int j = 0; j < numInterestedEvents; ++j)
+      event.incorporateInterest(interestedEvents[j]);
+  }
+}
+
+// Handy for debugging
+void doNothing() {
+  cout << "I'm in a thread!\n";
+}
+
 // Make sure the first argument to this function is:
 // - An array
 // - of objects
@@ -266,21 +284,52 @@ Handle<Value> scoreInterest(const Arguments& args) {
   
   Local<Array> jsEvents = Local<Array>::Cast(args[0]);
   int numEvents = jsEvents->Length();
+  vector<SimpleEvent> events = vector<SimpleEvent>();
+  events.reserve(numEvents);
+  for (int i = 0; i < numEvents; ++i)
+    events.push_back(SimpleEvent(jsEvents->CloneElementAt(i), i));
   
   Local<Array> jsInterestedEvents = Local<Array>::Cast(args[1]);
   int numInterestedEvents = jsInterestedEvents->Length();
   vector<SimpleEvent> interestedEvents = vector<SimpleEvent>();
-  interestedEvents.reserve(numEvents);
+  interestedEvents.reserve(numInterestedEvents);
   for (int i = 0; i < numInterestedEvents; ++i)
     interestedEvents.push_back(SimpleEvent(jsInterestedEvents->CloneElementAt(i), i));
   
-  for (int i = 0; i < numEvents; ++i) {
+  // The non-threaded version
+  /*for (int i = 0; i < numEvents; ++i) {
+    SimpleEvent event = events[i];
+    for (int j = 0; j < numInterestedEvents; ++j)
+      event.incorporateInterest(interestedEvents[j]);
+  }*/
+  
+  // Proof of concept: threads can get along with node w/o using libuv.
+  //thread worker(doNothing);
+  //worker.join();
+  
+  int chunkSize = numEvents/threadCount;
+  
+  vector<thread> workers = vector<thread>();
+  for (int t = 0; t < threadCount - 1; ++t) {
+    workers.push_back(thread(processEvents, events, interestedEvents, chunkSize*t, chunkSize*t+chunkSize));
+  }
+  // Main thread handles a few extra events plus its share.
+  for (int i = chunkSize * (threadCount - 1); i < numEvents; ++i) {
     Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
     SimpleEvent event = SimpleEvent(jsEvent, i);
     for (int j = 0; j < numInterestedEvents; ++j)
       event.incorporateInterest(interestedEvents[j]);
     jsEvent->Set(String::New("sortScore"), Number::New(event.sortScore));
   }
+  for (int t = 0; t < threadCount - 1; ++t)
+    if (workers[t].joinable())
+      workers[t].join();
+  
+  for (int i = 0; i < numEvents; ++i) {
+    Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
+    jsEvent->Set(String::New("sortScore"), Number::New(events[i].sortScore));
+  }
+  
   return scope.Close(String::New("These are not the events you are looking for."));
 }
 
