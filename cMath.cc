@@ -333,6 +333,49 @@ Handle<Value> scoreInterest(const Arguments& args) {
   return scope.Close(String::New("These are not the events you are looking for."));
 }
 
+// Make sure the first argument to this function is:
+// - An array
+// - of objects
+// - each of which has a sortScore and an ed
+// - the sortScore is a double (NOT NaN, null or undefined)
+// - ed is an array of ints (possibly empty but NOT null or undefined).
+// and the second argument is:
+// - An array
+// - of objects
+// - each of which has an ed
+// - ed is an array of ints (possibly empty but NOT null or undefined).
+Handle<Value> scoreUninterest(const Arguments& args) {
+  HandleScope scope;
+  
+  Local<Array> jsEvents = Local<Array>::Cast(args[0]);
+  int numEvents = jsEvents->Length();
+  vector<SimpleEvent> events = vector<SimpleEvent>();
+  events.reserve(numEvents);
+  for (int i = 0; i < numEvents; ++i)
+    events.push_back(SimpleEvent(jsEvents->CloneElementAt(i), i));
+  
+  Local<Array> jsUninterestedEvents = Local<Array>::Cast(args[1]);
+  int numInterestedEvents = jsUninterestedEvents->Length();
+  vector<SimpleEvent> interestedEvents = vector<SimpleEvent>();
+  interestedEvents.reserve(numInterestedEvents);
+  for (int i = 0; i < numInterestedEvents; ++i)
+    interestedEvents.push_back(SimpleEvent(jsUninterestedEvents->CloneElementAt(i), i));
+  
+  // The non-threaded version
+  for (int i = 0; i < numEvents; ++i) {
+    SimpleEvent event = events[i];
+    for (int j = 0; j < numInterestedEvents; ++j)
+      event.rescore(interestedEvents[j]);
+  }
+  
+  for (int i = 0; i < numEvents; ++i) {
+    Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
+    jsEvent->Set(String::New("sortScore"), Number::New(events[i].sortScore));
+  }
+  
+  return scope.Close(String::New("These are not the events you are looking for."));
+}
+
 // node.js magic
 void init(Handle<Object> exports) {
   exports->Set(String::NewSymbol("loadVecs"),
@@ -343,6 +386,8 @@ void init(Handle<Object> exports) {
       FunctionTemplate::New(sortEvents)->GetFunction());
   exports->Set(String::NewSymbol("scoreInterest"),
       FunctionTemplate::New(scoreInterest)->GetFunction());
+  exports->Set(String::NewSymbol("scoreUninterest"),
+      FunctionTemplate::New(scoreUninterest)->GetFunction());
 }
 
 NODE_MODULE(cMath, init)
