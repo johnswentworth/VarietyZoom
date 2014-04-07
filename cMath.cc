@@ -120,6 +120,54 @@ double metric(vector<int>& words1, vector<int>& words2) {
   return metricVal/(rows+cols);
 }
 
+void addInPlace(double* a, double* dst, int size) {
+  for (int j = 0; j < size; ++j)
+    dst[j] += a[j];
+}
+
+double* sumWordVecs(vector<int> words, int size) {
+  double* result = new double[size];
+  for (int j = 0; j < size; ++j)
+    result[j] = 0.0;
+  
+  for (int i = 0; i < words.size(); ++i)
+    addInPlace(wordVecs[words[i]], result, size);
+  
+  return result;
+}
+
+double sanerMetric(vector<int>& words1, vector<int>& words2) {
+  double* sum1 = sumWordVecs(words1, 300);
+  double* sum2 = sumWordVecs(words2, 300);
+  
+  double norm = dot(sum1, sum1, 300)*dot(sum2, sum2, 300);
+  double result = 0.0;
+  if (norm > 0.0)
+    result = dot(sum1, sum2, 300)/sqrt(norm);
+  
+  delete[] sum1;
+  delete[] sum2;
+  
+  return result;
+}
+
+// params should be {mu, sigma}
+double logPNormal(double x, const double* params) {
+  double z = (x - params[0])/params[1];
+  return -0.5 * z * z - log(params[1]);
+}
+
+// Remember to apply any transformations to z BEFORE passing here.
+// lambda[0] should be -logZ
+double logPMaxEnt1DPoly(double z, const double* lambda, int order) {
+  double poly = 1.0;
+  double logP = 0.0;
+  for (int i = 0; i <= order; ++i)
+    logP += lambda[i]*poly;
+    poly *= z;
+  return logP;
+}
+
 class SimpleEvent {
   public:
     vector<int> words;
@@ -133,10 +181,8 @@ class SimpleEvent {
     srcIndex = index;
   }
   
-  static constexpr double muV = 0.49475873081306054;
-  static constexpr double sigV = 0.14822517233116092;
-  static constexpr double muR = 0.5112155633954039;
-  static constexpr double sigR = 0.14822517233116092;
+  static constexpr double normV[2] = {0.49475873081306054, 0.14822517233116092};
+  static constexpr double normR[2] = {0.5112155633954039, .14822517233116092};
   
   static double weirdMetricToDscore(double metricValue) {
     // Apply a Fisher transformation so that the metric is approximately normally distributed.
@@ -147,36 +193,48 @@ class SimpleEvent {
     // The four magic numbers above are the normal distribution parameters for both events viewed (V) and rendered (R)
     // They came from fitting to data.
     // We use them to compute the change in log odds of a view, a.k.a. the change in score
-    double zView = (metricValue - muV)/sigV;
-    double zRender = (metricValue - muR)/sigR;
-    return 0.5*zView*zView - 0.5*zRender*zRender + log(sigR) - log(sigV);
+    return logPNormal(metricValue, normV) - logPNormal(metricValue, normR);
   }
   
-  static constexpr double muVS = 0.39572821759080429;
-  static constexpr double sigVS = 0.13549539232977462;//0.15290152697711662;
-  static constexpr double muRS = 0.35188236872960243;
-  static constexpr double sigRS = 0.13549539232977462;
+  static constexpr double normVS[2] = {0.39572821759080429, 0.13549539232977462};
+  static constexpr double normRS[2] = {0.35188236872960243, 0.13549539232977462};
 
   static double weirdMetricToDscoreInterest(double metricValue) {
     metricValue = 0.5*log((1.000000001 + metricValue)/(1.000000001 - metricValue));
     
-    double zView = (metricValue - muVS)/sigVS;
-    double zRender = (metricValue - muRS)/sigRS;
-    return 0.5*zView*zView - 0.5*zRender*zRender + log(sigRS) - log(sigVS);
+    return logPNormal(metricValue, normVS) - logPNormal(metricValue, normRS);
+  }
+  
+  static constexpr double lambdaV[5] = {-0.05319645, -0.05381913, -0.31213313, 0.02353204, -0.03221628};
+  static constexpr double normV2[2] = {0.359182383515, 0.257818744429};
+  static constexpr double lambdaR[5] = {-0.00637299, -0.0856128, -0.34239143, 0.03465981, -0.03060496};
+  static constexpr double normR2[2] = {0.302671908405, 0.244816885362};
+  
+  static double sanerMetricToDscoreInterest(double metricValue) {
+    double zV = (metricValue - normV2[0])/normV2[1];
+    double zR = (metricValue - normR2[0])/normR2[1];
+    return logPMaxEnt1DPoly(zV, lambdaV, 4) - logPMaxEnt1DPoly(zR, lambdaR, 4);
   }
   
   void rescore(SimpleEvent& other) {
     if (words.size() == 0 || other.words.size() == 0) // If there is no description, assume the worst.
-      sortScore -= weirdMetricToDscore(1.0);
+      sortScore += weirdMetricToDscore(1.0);
     else
-      sortScore -= weirdMetricToDscore(metric(words, other.words));
+      sortScore += weirdMetricToDscore(metric(words, other.words));
   }
   
   void incorporateInterest(SimpleEvent& other) {
     if (words.size() == 0 || other.words.size() == 0) // If there is no description, assume the worst.
-      sortScore -= weirdMetricToDscoreInterest(0.0);
+      sortScore += weirdMetricToDscoreInterest(0.0);
     else
-      sortScore -= weirdMetricToDscoreInterest(metric(words, other.words));
+      sortScore += weirdMetricToDscoreInterest(metric(words, other.words));
+  }
+  
+  void incorporateInterest2(SimpleEvent& other) {
+    if (words.size() == 0 || other.words.size() == 0) // If there is no description, assume the worst.
+      sortScore += sanerMetricToDscoreInterest(0.0);
+    else
+      sortScore += sanerMetricToDscoreInterest(sanerMetric(words, other.words));
   }
   
   void swap(SimpleEvent& other) {
@@ -344,6 +402,44 @@ Handle<Value> scoreInterest(const Arguments& args) {
 // - of objects
 // - each of which has an ed
 // - ed is an array of ints (possibly empty but NOT null or undefined).
+Handle<Value> scoreInterest2(const Arguments& args) {
+  HandleScope scope;
+  
+  Local<Array> jsEvents = Local<Array>::Cast(args[0]);
+  int numEvents = jsEvents->Length();
+  vector<SimpleEvent> events = vector<SimpleEvent>();
+  events.reserve(numEvents);
+  for (int i = 0; i < numEvents; ++i)
+    events.push_back(SimpleEvent(jsEvents->CloneElementAt(i), i));
+  
+  Local<Array> jsInterestedEvents = Local<Array>::Cast(args[1]);
+  int numInterestedEvents = jsInterestedEvents->Length();
+  vector<SimpleEvent> interestedEvents = vector<SimpleEvent>();
+  interestedEvents.reserve(numInterestedEvents);
+  for (int i = 0; i < numInterestedEvents; ++i)
+    interestedEvents.push_back(SimpleEvent(jsInterestedEvents->CloneElementAt(i), i));
+  
+  // The non-threaded version
+  for (int i = 0; i < numEvents; ++i) {
+    SimpleEvent event = events[i];
+    for (int j = 0; j < numInterestedEvents; ++j)
+      event.incorporateInterest2(interestedEvents[j]);
+  }
+  
+  return scope.Close(String::New("These are not the events you are looking for."));
+}
+
+// Make sure the first argument to this function is:
+// - An array
+// - of objects
+// - each of which has a sortScore and an ed
+// - the sortScore is a double (NOT NaN, null or undefined)
+// - ed is an array of ints (possibly empty but NOT null or undefined).
+// and the second argument is:
+// - An array
+// - of objects
+// - each of which has an ed
+// - ed is an array of ints (possibly empty but NOT null or undefined).
 Handle<Value> scoreUninterest(const Arguments& args) {
   HandleScope scope;
   
@@ -385,6 +481,8 @@ void init(Handle<Object> exports) {
   exports->Set(String::NewSymbol("sortEvents"),
       FunctionTemplate::New(sortEvents)->GetFunction());
   exports->Set(String::NewSymbol("scoreInterest"),
+      FunctionTemplate::New(scoreInterest)->GetFunction());
+  exports->Set(String::NewSymbol("scoreInterest2"),
       FunctionTemplate::New(scoreInterest)->GetFunction());
   exports->Set(String::NewSymbol("scoreUninterest"),
       FunctionTemplate::New(scoreUninterest)->GetFunction());
