@@ -483,7 +483,7 @@ void init(Handle<Object> exports) {
   exports->Set(String::NewSymbol("scoreInterest"),
       FunctionTemplate::New(scoreInterest)->GetFunction());
   exports->Set(String::NewSymbol("scoreInterest2"),
-      FunctionTemplate::New(scoreInterest)->GetFunction());
+      FunctionTemplate::New(scoreInterest2)->GetFunction());
   exports->Set(String::NewSymbol("scoreUninterest"),
       FunctionTemplate::New(scoreUninterest)->GetFunction());
 }
