@@ -15,8 +15,30 @@ using namespace std;
 // ... and she'll make it REALLY slow and painful for this.
 vector<double*> wordVecs;
 
+// Normed vecs is for the old similarity. Hopefully I'll remove it soon. :)
+vector<double*> normedVecs;
+
 // VERY rough sheets.
 int threadCount = 4;
+
+double* normalize(double* vec, int size) {
+  double mean = 0.0;
+  for (int i = 0; i < size; ++i)
+    mean += vec[i];
+  mean /= size;
+  
+  double norm = 0.0;
+  for (int i = 0; i < size; ++i) {
+    norm += (vec[i] - mean)*(vec[i] - mean);
+  }
+  norm /= size;
+  norm = sqrt(norm);
+  
+  double* result = new double[size];
+  for (int i = 0; i < size; ++i)
+    result[i] = (vec[i] - mean)/norm;
+  return result;
+}
 
 // This function is called once at startup to load the wordVectors into that charming global variable.
 Handle<Value> loadVecs(const Arguments& args) {
@@ -36,6 +58,10 @@ Handle<Value> loadVecs(const Arguments& args) {
     for (int j = 0; j < 300; ++j)
       vec[j] = row->Get(j)->ToNumber()->Value();
     wordVecs.push_back(vec);
+  }
+  
+  for (int i = 0; i < wordVecs.size(); ++i) {
+    normedVecs.push_back(normalize(wordVecs[i], 300));
   }
   cout << "Loaded " << wordVecs.size() << " wordVectors!\n";
   return scope.Close(String::New("Locked and loaded."));
@@ -93,7 +119,7 @@ double metric(vector<int>& words1, vector<int>& words2) {
   for (int i = 0; i < words1.size(); ++i) {
     for (int j = 0; j < words2.size(); ++j) {
       // This line is where the action happens. It is a little more than 90% of the runtime.
-      correls[rowInd + j] = dot(wordVecs[words1[i]], wordVecs[words2[j]], 300);
+      correls[rowInd + j] = dot(normedVecs[words1[i]], normedVecs[words2[j]], 300);
     }
     rowInd += cols;
   }
@@ -140,19 +166,21 @@ double sanerMetric(vector<int>& words1, vector<int>& words2) {
   double* sum1 = sumWordVecs(words1, 300);
   double* sum2 = sumWordVecs(words2, 300);
   
-  double norm = dot(sum1, sum1, 300)*dot(sum2, sum2, 300);
-  double result = 0.0;
-  if (norm > 0.0)
-    result = dot(sum1, sum2, 300)/sqrt(norm);
+  double* normed1 = normalize(sum1, 300);
+  double* normed2 = normalize(sum2, 300);
+  
+  double result = dot(normed1, normed2, 300);
   
   delete[] sum1;
   delete[] sum2;
+  delete[] normed1;
+  delete[] normed2;
   
   return result;
 }
 
 // params should be {mu, sigma}
-double logPNormal(double x, const double* params) {
+double logPNormal(double x, double* params) {
   double z = (x - params[0])/params[1];
   return -0.5 * z * z - log(params[1]);
 }
@@ -181,38 +209,38 @@ class SimpleEvent {
     srcIndex = index;
   }
   
-  static constexpr double normV[2] = {0.49475873081306054, 0.14822517233116092};
-  static constexpr double normR[2] = {0.5112155633954039, .14822517233116092};
-  
   static double weirdMetricToDscore(double metricValue) {
     // Apply a Fisher transformation so that the metric is approximately normally distributed.
     // And when I say approximately, we're talking spherical chickens in a vacuum.
     // The number slightly larger than 1 helps us not die when there's roundoff error in the metric calculation.
     metricValue = 0.5*log((1.000000001 + metricValue)/(1.000000001 - metricValue));
+    
+    double normV[2] = {0.49475873081306054, 0.14822517233116092};
+    double normR[2] = {0.5112155633954039, .14822517233116092};
   
     // The four magic numbers above are the normal distribution parameters for both events viewed (V) and rendered (R)
     // They came from fitting to data.
     // We use them to compute the change in log odds of a view, a.k.a. the change in score
     return logPNormal(metricValue, normV) - logPNormal(metricValue, normR);
   }
-  
-  static constexpr double normVS[2] = {0.39572821759080429, 0.13549539232977462};
-  static constexpr double normRS[2] = {0.35188236872960243, 0.13549539232977462};
 
   static double weirdMetricToDscoreInterest(double metricValue) {
     metricValue = 0.5*log((1.000000001 + metricValue)/(1.000000001 - metricValue));
     
-    return logPNormal(metricValue, normVS) - logPNormal(metricValue, normRS);
+    double normV[2] = {0.39572821759080429, 0.13549539232977462};
+    double normR[2] = {0.35188236872960243, 0.13549539232977462};
+    
+    return logPNormal(metricValue, normV) - logPNormal(metricValue, normR);
   }
   
-  static constexpr double lambdaV[5] = {-0.05319645, -0.05381913, -0.31213313, 0.02353204, -0.03221628};
-  static constexpr double normV2[2] = {0.359182383515, 0.257818744429};
-  static constexpr double lambdaR[5] = {-0.00637299, -0.0856128, -0.34239143, 0.03465981, -0.03060496};
-  static constexpr double normR2[2] = {0.302671908405, 0.244816885362};
-  
   static double sanerMetricToDscoreInterest(double metricValue) {
-    double zV = (metricValue - normV2[0])/normV2[1];
-    double zR = (metricValue - normR2[0])/normR2[1];
+    double lambdaV[5] = {-0.05319645, -0.05381913, -0.31213313, 0.02353204, -0.03221628};
+    double normV[2] = {0.359182383515, 0.257818744429};
+    double lambdaR[5] = {-0.00637299, -0.0856128, -0.34239143, 0.03465981, -0.03060496};
+    double normR[2] = {0.302671908405, 0.244816885362};
+    
+    double zV = (metricValue - normV[0])/normV[1];
+    double zR = (metricValue - normR[0])/normR[1];
     return logPMaxEnt1DPoly(zV, lambdaV, 4) - logPMaxEnt1DPoly(zR, lambdaR, 4);
   }
   
