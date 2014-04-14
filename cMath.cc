@@ -456,6 +456,7 @@ Handle<Value> scoreInterest2(const Arguments& args) {
   
   for (int i = 0; i < numEvents; ++i) {
     Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
+    cout << "sort score: " << events[i].sortScore << "\n";
     jsEvent->Set(String::New("sortScore"), Number::New(events[i].sortScore));
   }
   
