@@ -449,18 +449,17 @@ Handle<Value> scoreInterest2(const Arguments& args) {
   
   // The non-threaded version
   for (int i = 0; i < numEvents; ++i) {
-    //SimpleEvent event = events[i];
     for (int j = 0; j < numInterestedEvents; ++j)
       events[i].incorporateInterest2(interestedEvents[j]);
   }
   
   for (int i = 0; i < numEvents; ++i) {
     Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
-    cout << "sort score: " << events[i].sortScore << "\n";
+    //cout << "sort score: " << events[i].sortScore << "\n";
     jsEvent->Set(String::New("sortScore"), Number::New(events[i].sortScore));
   }
   
-  cout << "Scored " << numEvents << " events from " << numInterestedEvents << " interests\n";
+  //cout << "Scored " << numEvents << " events from " << numInterestedEvents << " interests\n";
   return scope.Close(String::New("These are not the events you are looking for."));
 }
 
