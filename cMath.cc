@@ -459,7 +459,7 @@ Handle<Value> scoreInterest2(const Arguments& args) {
     jsEvent->Set(String::New("sortScore"), Number::New(events[i].sortScore));
   }
   
-  cout << "Scored " << numEvents << " events\n";
+  cout << "Scored " << numEvents << " events from " << numInterestedEvents << " interests\n";
   return scope.Close(String::New("These are not the events you are looking for."));
 }
 
