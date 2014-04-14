@@ -454,6 +454,11 @@ Handle<Value> scoreInterest2(const Arguments& args) {
       event.incorporateInterest2(interestedEvents[j]);
   }
   
+  for (int i = 0; i < numEvents; ++i) {
+    Local<Object> jsEvent  = jsEvents->Get(i)->ToObject();
+    jsEvent->Set(String::New("sortScore"), Number::New(events[i].sortScore));
+  }
+  
   return scope.Close(String::New("These are not the events you are looking for."));
 }
 
