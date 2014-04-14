@@ -449,9 +449,9 @@ Handle<Value> scoreInterest2(const Arguments& args) {
   
   // The non-threaded version
   for (int i = 0; i < numEvents; ++i) {
-    SimpleEvent event = events[i];
+    //SimpleEvent event = events[i];
     for (int j = 0; j < numInterestedEvents; ++j)
-      event.incorporateInterest2(interestedEvents[j]);
+      events[i].incorporateInterest2(interestedEvents[j]);
   }
   
   for (int i = 0; i < numEvents; ++i) {
