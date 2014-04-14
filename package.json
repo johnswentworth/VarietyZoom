@@ -1,6 +1,6 @@
 {
   "name": "varietyzoom",
-  "version": "0.0.21",
+  "version": "0.0.22",
   "description": "A C++ implementation of a sorting algorithm which prioritizes both variety and high scores.",
   "main": "build/Release/cMath.node",
   "scripts": {

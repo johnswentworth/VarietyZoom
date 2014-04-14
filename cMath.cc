@@ -343,9 +343,9 @@ Handle<Value> sortEvents(const Arguments& args) {
 void processEvents(vector<SimpleEvent> events, vector<SimpleEvent> interestedEvents, int startIndex, int endIndex) {
   int numInterestedEvents = interestedEvents.size();
   for (int i = startIndex; i < endIndex; ++i) {
-    SimpleEvent event = events[i];
+    //SimpleEvent event = events[i];
     for (int j = 0; j < numInterestedEvents; ++j)
-      event.incorporateInterest(interestedEvents[j]);
+      events[i].incorporateInterest(interestedEvents[j]);
   }
 }
 
